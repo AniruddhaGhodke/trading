@@ -1,0 +1,11 @@
+flowchart TD
+    A["1. HTF bias<br/>Daily/weekly structure bullish?"] -->|no| X[No long trades today]
+    A -->|yes| B["2. Premium / Discount<br/>Is price in the DISCOUNT half of the HTF range?"]
+    B -->|no| X
+    B -->|yes| C["3. Liquidity Pool<br/>Mark sell-side liquidity below:<br/>Asian low, PDL, equal lows"]
+    C --> T{"Time: inside the London<br/>2-5am NY window?"}
+    T -->|no| W[Wait]
+    T -->|yes| D["4. Liquidity Sweep<br/>Wick below the pool, close back above"]
+    D --> E["6. Displacement + Speed<br/>Big bodies up, break of structure (MSS)"]
+    E --> F["5. FVG / IFVG<br/>Displacement leaves a bullish FVG<br/>or inverts a bearish FVG"]
+    F --> G["ENTRY on return into the FVG / IFVG<br/>STOP below the sweep low<br/>TARGET: buy-side liquidity above"]

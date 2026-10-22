@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chart Replay</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#131722; --panel:#1e222d; --fg:#d1d4dc; --muted:#787b86; --accent:#2962ff; --border:#2a2e39;
+          --up:#26a69a; --down:#ef5350; --warn:#ffb74d; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:13px system-ui, sans-serif; }
+  body { display:flex; flex-direction:column; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--border); }
+  .bar label { color:var(--muted); display:flex; gap:6px; align-items:center; }
+  select, input, button { background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:5px 8px; font:inherit; }
+  button { cursor:pointer; min-width:36px; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:default; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .sep { width:1px; height:22px; background:var(--border); }
+
+  /* quote strip: symbol, time, OHLC (coloured by candle direction), change vs previous close, volume */
+  .quote-bar { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; padding:6px 12px; border-bottom:1px solid var(--border);
+               font-size:14px; font-variant-numeric:tabular-nums; min-height:33px; }
+  #quote { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; }
+  #quote .sym { font-weight:700; font-size:15px; color:#fff; letter-spacing:.3px; }
+  #quote .chip { font-size:11px; color:var(--fg); background:var(--border); border-radius:3px; padding:1px 6px; }
+  #quote .time { color:var(--fg); }
+  #quote.hovering .time { color:var(--warn); }
+  #quote.hovering .time::after { content:" (hover)"; color:var(--muted); font-size:11px; }
+  #quote .ohlc { display:flex; gap:10px; }
+  #quote .k { color:var(--muted); margin-right:3px; font-size:12px; }
+  #quote .up { color:var(--up); }
+  #quote .down { color:var(--down); }
+  #quote .vol { color:var(--fg); }
+  #msg { margin-left:auto; color:var(--muted); font-size:12px; }
+  #msg.warn { color:var(--warn); }
+  #msg.err { color:var(--down); }
+  #msg.live { color:#5c9ded; }
+
+  #main { flex:1; display:flex; min-height:300px; }
+  #tools { width:42px; display:flex; flex-direction:column; align-items:center; gap:4px; padding:6px 0;
+           background:var(--panel); border-right:1px solid var(--border); }
+  #tools button { width:32px; height:32px; min-width:0; padding:0; display:grid; place-items:center; border-color:transparent; background:transparent; }
+  #tools button:hover { background:var(--border); }
+  #tools button.active { background:var(--accent); color:#fff; }
+  #tools svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; }
+  #tools .tsep { width:24px; height:1px; background:var(--border); margin:4px 0; }
+  #wrap { flex:1; position:relative; }
+  #chart { position:absolute; inset:0; }
+  #legend { position:absolute; top:6px; left:10px; z-index:3; pointer-events:none; font-size:12px; line-height:1.5;
+            font-variant-numeric:tabular-nums; text-shadow:0 0 3px var(--bg); }
+  #legend .muted { color:var(--muted); }
+  #legend .pat { max-width:520px; white-space:normal; }
+  .menu { position:relative; }
+  button.active { border-color:var(--accent); color:#fff; background:#2962ff33; }
+  .toggle-group { display:flex; }
+  .toggle-group button { border-radius:4px 0 0 4px; }
+  .toggle-group select { border-radius:0 4px 4px 0; border-left:none; }
+
+  /* paper-trading panel */
+  #trade { width:290px; flex:none; overflow-y:auto; background:var(--panel); border-left:1px solid var(--border); padding:10px;
+           display:flex; flex-direction:column; gap:8px; font-variant-numeric:tabular-nums; }
+  #trade .muted { color:var(--muted); font-size:12px; }
+  #trade .up { color:var(--up); } #trade .down { color:var(--down); } #trade .warn { color:var(--warn); }
+  .tr-head { font-weight:700; color:#fff; display:flex; justify-content:space-between; align-items:baseline; }
+  .tr-head .muted { font-weight:400; font-size:11px; }
+  .tr-grid { display:grid; grid-template-columns:auto 1fr 30px; gap:6px 8px; align-items:center; }
+  .tr-grid label { color:var(--muted); white-space:nowrap; }
+  .tr-grid input { width:100%; min-width:0; padding:3px 6px; }
+  .tr-grid label.sl { color:var(--down); } .tr-grid label.tp { color:var(--up); }
+  .tr-grid button { min-width:0; width:30px; padding:3px 0; }
+  .tr-btns { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+  .tr-btns .buy { background:var(--up); border-color:var(--up); color:#fff; font-weight:600; }
+  .tr-btns .sell { background:var(--down); border-color:var(--down); color:#fff; font-weight:600; }
+  #tr-msg { font-size:12px; min-height:16px; color:var(--muted); }
+  #tr-msg.err { color:var(--down); } #tr-msg.warn { color:var(--warn); } #tr-msg.live { color:#5c9ded; }
+  #tr-live { display:flex; flex-direction:column; gap:3px; min-height:40px; }
+  .tr-pos { font-weight:700; } .tr-pos.long { color:var(--up); } .tr-pos.short { color:var(--down); }
+  .tr-sub { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border); padding-top:8px; font-weight:700; color:#fff; }
+  .tr-sub button { min-width:0; padding:2px 8px; font-size:12px; margin-left:4px; font-weight:400; }
+  .tr-stats { display:grid; grid-template-columns:1fr 1fr; gap:2px 10px; font-size:12px; }
+  #tr-log table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  #tr-log th { color:var(--muted); font-weight:400; text-align:left; border-bottom:1px solid var(--border); }
+  #tr-log td { padding:2px 2px; border-bottom:1px solid #1f2430; white-space:nowrap; }
+  .tr-note { margin-top:auto; }
+  /* options panel */
+  #opt { width:340px; flex:none; overflow-y:auto; background:var(--panel); border-left:1px solid var(--border); padding:10px;
+         display:flex; flex-direction:column; gap:8px; font-variant-numeric:tabular-nums; }
+  #opt .muted { color:var(--muted); font-size:12px; }
+  #opt .up { color:var(--up); } #opt .down { color:var(--down); } #opt .warn { color:var(--warn); } #opt .err { color:var(--down); }
+  .op-top { display:flex; gap:8px; align-items:center; } .op-top select { flex:1; min-width:0; }
+  .op-top label { color:var(--muted); display:flex; gap:4px; align-items:center; } .op-top input { width:52px; padding:3px 5px; }
+  table.oc { width:100%; border-collapse:collapse; font-size:12px; }
+  table.oc th { color:var(--muted); font-weight:400; border-bottom:1px solid var(--border); padding:2px; }
+  table.oc td { padding:2px 3px; text-align:right; border-bottom:1px solid #1f2430; }
+  table.oc td.k { text-align:center; font-weight:600; color:#fff; background:#2a2e39; }
+  table.oc tr.atm td.k { background:var(--accent); }
+  table.oc td.itm { background:#2962ff1a; }
+  table.oc td.px { cursor:pointer; color:var(--fg); font-weight:600; }
+  table.oc td.px:hover { outline:1px solid var(--accent); }
+  table.oc td.px.syn { font-style:italic; font-weight:400; }
+  table.oc td.px.stale { color:var(--muted); font-weight:400; }
+  table.oc td.px.sel { background:var(--accent); color:#fff; }
+  .op-note { font-size:11px !important; margin-top:3px; }
+  .op-btns { grid-template-columns:1fr 1fr; }
+  #op-msg { font-size:12px; min-height:16px; color:var(--muted); }
+  #op-msg.err { color:var(--down); } #op-msg.warn { color:var(--warn); } #op-msg.live { color:#5c9ded; }
+  .badge { font-size:10px; font-weight:700; border-radius:3px; padding:1px 5px; letter-spacing:.4px; }
+  .badge.real { background:#26a69a33; color:var(--up); } .badge.synth { background:#ffb74d33; color:var(--warn); }
+  .badge.mixed { background:#2962ff33; color:#8fa8ff; }
+  .op-costs summary { cursor:pointer; } .op-costs .tr-grid { margin-top:6px; }
+  #op-log table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  #op-log th { color:var(--muted); font-weight:400; text-align:left; border-bottom:1px solid var(--border); }
+  #op-log td { padding:2px 2px; border-bottom:1px solid #1f2430; white-space:nowrap; }
+  /* alerts panel */
+  #alerts { width:300px; flex:none; overflow-y:auto; background:var(--panel); border-left:1px solid var(--border); padding:10px;
+            display:flex; flex-direction:column; gap:8px; }
+  #alerts .muted { color:var(--muted); font-size:12px; }
+  .al-opts { display:flex; gap:12px; color:var(--muted); font-size:12px; }
+  .al-opts label { display:flex; gap:4px; align-items:center; }
+  #al-msg.err { color:var(--down); } #al-msg.live { color:#5c9ded; }
+  #al-list { display:flex; flex-direction:column; gap:6px; }
+  .al-row { border-left:3px solid var(--border); padding:4px 6px; background:#1a1e29; border-radius:3px; }
+  .al-row.sig { border-left-color:var(--accent); background:#2962ff1f; }
+  .al-row.exit { border-left-color:var(--muted); }
+  .al-row.trend, .al-row.breakout { border-left-color:var(--up); }
+  .al-row.range, .al-row.gap { border-left-color:var(--warn); }
+  .al-h { display:flex; justify-content:space-between; align-items:center; gap:6px; color:#fff; font-size:12px; }
+  .al-h button { min-width:0; padding:2px 8px; font-size:12px; }
+  .al-take { background:var(--up) !important; border-color:var(--up) !important; color:#fff; }
+  .al-skip { margin-left:4px; }
+  .al-dec { font-size:11px; font-weight:700; } .al-dec.take { color:var(--up); } .al-dec.skip { color:var(--muted); }
+  .al-t { font-size:12px; color:var(--fg); margin-top:2px; line-height:1.35; }
+  #live-btn.active { background:#ef535033; border-color:var(--down); color:#fff; }
+  #ind-panel { display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:10; background:var(--panel);
+               border:1px solid var(--border); border-radius:6px; padding:8px; min-width:280px; box-shadow:0 6px 20px #0008; }
+  #ind-panel.open { display:block; }
+  .ind-row { display:flex; gap:6px; align-items:center; padding:3px 0; }
+  .ind-row label { flex:1; color:var(--fg); white-space:nowrap; }
+  .ind-row input[type=number] { width:58px; padding:3px 5px; }
+  .ind-row button { min-width:0; padding:3px 8px; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <label>Symbol <select id="symbol"></select></label>
+    <label>Interval <select id="interval"></select></label>
+    <label>Start <input id="start" type="datetime-local" value="2026-09-01T09:15"></label>
+    <button id="load" class="primary">Load</button>
+    <span class="menu"><button id="ind-btn">Indicators ▾</button><div id="ind-panel"></div></span>
+    <span class="toggle-group" title="Candlestick patterns, marked when the candle closes. Hover a marked candle for an explanation. P = hide/show">
+      <button id="pat-btn">Patterns</button><select id="patterns"><option value="key">Key</option><option value="all">All</option></select></span>
+    <button id="trade-btn" title="Show / hide the paper-trading panel">Trade</button>
+    <button id="opt-btn" title="Nifty option chain, premium chart and option paper trading">Options</button>
+    <button id="alerts-btn" title="Assist alerts + BASEBREAK practice setup, revealed with the replay clock; Take / Skip logs your decision">Alerts</button>
+    <button id="live-btn" title="Live market data (Nifty and Nifty options only, during market hours). Click again to stop">● Live</button>
+    <span class="sep"></span>
+    <button id="prev" title="Step back (←) · Shift: whole candle" disabled>⏮</button>
+    <button id="play" title="Play / pause (Space)" disabled>▶</button>
+    <button id="next" title="Step forward (→) · Shift: whole candle" disabled>⏭</button>
+    <label>Speed <select id="speed">
+      <option value="2000">0.5×</option>
+      <option value="1000" selected>1×</option>
+      <option value="500">2×</option>
+      <option value="200">5×</option>
+      <option value="100">10×</option>
+    </select></label>
+    <label title="Forming candles: reveal each candle in steps of this size. Auto = 1m where 1-minute data exists, else 5m">Tick <select id="tick"></select></label>
+  </div>
+  <div class="quote-bar"><div id="quote"></div><span id="msg">Pick a symbol and start time, then Load.</span></div>
+  <div id="main">
+    <div id="tools">
+      <button data-tool="cursor" class="active" title="Cursor - select / move drawings (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg></button>
+      <button data-tool="trend" title="Trend line (Alt+T)">
+        <svg viewBox="0 0 24 24"><path d="M4 20L20 4"/><circle cx="4" cy="20" r="1.8"/><circle cx="20" cy="4" r="1.8"/></svg></button>
+      <button data-tool="ray" title="Ray - extends to the right">
+        <svg viewBox="0 0 24 24"><path d="M4 20L22 6"/><circle cx="4" cy="20" r="1.8"/><circle cx="12" cy="13.8" r="1.8"/></svg></button>
+      <button data-tool="hline" title="Horizontal line (Alt+H)">
+        <svg viewBox="0 0 24 24"><path d="M2 12h20"/><circle cx="12" cy="12" r="1.8"/></svg></button>
+      <button data-tool="vline" title="Vertical line (Alt+V)">
+        <svg viewBox="0 0 24 24"><path d="M12 2v20"/><circle cx="12" cy="12" r="1.8"/></svg></button>
+      <button data-tool="rect" title="Rectangle (Alt+R)">
+        <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <button data-tool="ruler" title="Measure (or Shift+click)">
+        <svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
+      <span class="tsep"></span>
+      <button id="tool-delete" title="Delete selected drawing (Delete)">
+        <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button>
+      <button id="tool-clear" title="Delete all drawings on this symbol">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="wrap"><div id="chart"></div><div id="legend"></div></div>
+    <div id="alerts"></div>
+    <div id="trade"></div>
+    <div id="opt"></div>
+  </div>
+  <script src="/static/lightweight-charts.standalone.production.js"></script>
+  <script src="/static/indicators.js"></script>
+  <script src="/static/drawings.js"></script>
+  <script src="/static/patterns.js"></script>
+  <script src="/static/trade.js"></script>
+  <script src="/static/options.js"></script>
+  <script src="/static/alerts.js"></script>
+  <script src="/static/replay.js"></script>
+</body>
+</html>
